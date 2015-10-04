@@ -91,7 +91,7 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 	register const char *p;
 	register int ch, err;
 	unsigned long long num;
-	int base, lflag, width, precision, altflag;
+	int base, lflag, width, precision, altflag, pflag;
 	char padc;
 
 	while (1) {
@@ -107,8 +107,14 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 		precision = -1;
 		lflag = 0;
 		altflag = 0;
+		pflag = 0;
 	reswitch:
 		switch (ch = *(unsigned char *) fmt++) {
+
+		// flag to force to show '+' sign
+		case '+':
+			pflag = 1;
+			goto reswitch;
 
 		// flag to pad on the right
 		case '-':
@@ -199,6 +205,8 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 			if ((long long) num < 0) {
 				putch('-', putdat);
 				num = -(long long) num;
+			} else if (pflag) {
+				putch('+', putdat);
 			}
 			base = 10;
 			goto number;
@@ -211,12 +219,10 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 
 		// (unsigned) octal
 		case 'o':
-			// Replace this with your code.
-			// display a number in octal form and the form should begin with '0'
-			putch('X', putdat);
-			putch('X', putdat);
-			putch('X', putdat);
-			break;
+			putch('0', putdat);
+			num = getuint(&ap, lflag);
+			base = 8;
+			goto number;
 
 		// pointer
 		case 'p':
