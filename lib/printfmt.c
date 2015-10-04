@@ -33,26 +33,52 @@ static const char * const error_string[MAXERROR] =
  * using specified putch function and associated pointer putdat.
  */
 static void
-printnum(void (*putch)(int, void*), void *putdat,
+printnum_p(void (*putch)(int, void*), void *putdat,
 	 unsigned long long num, unsigned base, int width, int padc)
 {
-	// if cprintf'parameter includes pattern of the form "%-", padding
-	// space on the right side if neccesary.
-	// you can add helper function if needed.
-	// your code here:
-
-
-	// first recursively print all preceding (more significant) digits
+	// recursively print all preceding (more significant) digits
 	if (num >= base) {
-		printnum(putch, putdat, num / base, base, width - 1, padc);
+		printnum_p(putch, putdat, num / base, base, width - 1, padc);
 	} else {
 		// print any needed pad characters before first digit
+		if (padc == '-')
+			padc = ' ';
 		while (--width > 0)
 			putch(padc, putdat);
 	}
 
-	// then print this (the least significant) digit
+	// print this (the least significant) digit
 	putch("0123456789abcdef"[num % base], putdat);
+}
+
+static int
+printnum_r(void (*putch)(int, void*), void *putdat,
+	 unsigned long long num, unsigned base, int width)
+{
+	// recursively print all preceding (more significant) digits
+	if (num >= base) {
+		width = printnum_r(putch, putdat, num / base, base, width - 1);
+	}
+
+	// print this (the least significant) digit
+	putch("0123456789abcdef"[num % base], putdat);
+
+	return width;
+}
+
+static void
+printnum(void (*putch)(int, void*), void *putdat,
+	 unsigned long long num, unsigned base, int width, int padc)
+{
+	if (padc != '-') {
+		printnum_p(putch, putdat, num, base, width, padc);
+	} else {
+		width = printnum_r(putch, putdat, num, base, width);
+
+		// print any needed pad characters after last digit
+		while (--width > 0)
+			putch(' ', putdat);
+	}
 }
 
 // Get an unsigned int of various possible sizes from a varargs list,
