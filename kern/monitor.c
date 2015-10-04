@@ -61,7 +61,7 @@ mon_kerninfo(int argc, char **argv, struct Trapframe *tf)
 static uint32_t
 read_pretaddr() {
     uint32_t pretaddr;
-    __asm __volatile("leal 4(%%ebp), %0" : "=r" (pretaddr)); 
+    __asm __volatile("leal 4(%%ebp), %0" : "=r" (pretaddr));
     return pretaddr;
 }
 
@@ -97,7 +97,7 @@ start_overflow(void)
 void
 overflow_me(void)
 {
-        start_overflow();
+	start_overflow();
 }
 
 int
