@@ -89,6 +89,7 @@ void
 vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 {
 	register const char *p;
+	register char *vp;
 	register int ch, err;
 	unsigned long long num;
 	int base, lflag, width, precision, altflag, pflag;
@@ -241,29 +242,26 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 			printnum(putch, putdat, num, base, width, padc);
 			break;
 
+		// get the number of chars written so far
         case 'n': {
-            // You can consult the %n specifier specification of the C99 printf function
-            // for your reference by typing "man 3 printf" on the console. 
-
-            // 
-            // Requirements:
-            // Nothing printed. The argument must be a pointer to a signed char, 
-            // where the number of characters written so far is stored.
-            //
-
-            // hint:  use the following strings to display the error messages 
-            //        when the cprintf function ecounters the specific cases,
-            //        for example, when the argument pointer is NULL
-            //        or when the number of characters written so far 
-            //        is beyond the range of the integers the signed char type 
-            //        can represent.
-
             const char *null_error = "\nerror! writing through NULL pointer! (%n argument)\n";
             const char *overflow_error = "\nwarning! The value %n argument pointed to has been overflowed!\n";
 
-            // Your code here
+            // notice: the first int of putdat should be the char counting
+            int count = *(int *) putdat;
 
-            break;
+			if ((vp = va_arg(ap, char *)) == NULL) {
+				printfmt(putch, putdat, "%s", null_error);
+				return;
+			}
+			if (*(int *) putdat > 127) {
+				printfmt(putch, putdat, "%s", overflow_error);
+			}
+
+			*(int *) putdat = count;
+			*vp = count;
+
+			break;
         }
 
 		// escaped '%' character
