@@ -25,6 +25,7 @@ static struct Command commands[] = {
 	{ "help", "Display this list of commands", mon_help },
 	{ "kerninfo", "Display information about the kernel", mon_kerninfo },
 	{ "backtrace", "Display the backtrace information", mon_backtrace },
+	{ "time", "Run the command and display its time usage", mon_time }
 };
 #define NCOMMANDS (sizeof(commands)/sizeof(commands[0]))
 
@@ -145,7 +146,42 @@ mon_backtrace(int argc, char **argv, struct Trapframe *tf)
 	return 0;
 }
 
+int
+mon_time(int argc, char **argv, struct Trapframe *tf)
+{
+	int i;
 
+	for (i = 0; i < NCOMMANDS; i++) {
+		if (strcmp(argv[1], commands[i].name) == 0) {
+			uint32_t time_lo;
+			uint32_t time_hi;
+			uint32_t time_lo_2;
+			uint32_t time_hi_2;
+
+			register int ret;
+
+			__asm __volatile(
+				"rdtsc\n"
+				"movl %%eax, %0\n"
+				"movl %%edx, %1\n"
+				: "=a" (time_lo), "=d" (time_hi)
+			);
+			ret = commands[i].func(argc - 1, argv + 1, tf);
+			__asm __volatile(
+				"rdtsc\n"
+				"movl %%eax, %0\n"
+				"movl %%edx, %1\n"
+				: "=a" (time_lo_2), "=d" (time_hi_2)
+			);
+			// cprintf("%x %x %x %x ", time_hi, time_lo, time_hi_2, time_lo_2);
+			uint64_t time_full = (uint64_t) time_lo ^ ((uint64_t) time_hi << 32);
+			uint64_t time_full_2 = (uint64_t) time_lo_2 ^ ((uint64_t) time_hi_2 << 32);
+			cprintf("%s cycles: %lld\n", argv[1], time_full_2 - time_full);
+		}
+	}
+
+	return 42;
+}
 
 /***** Kernel monitor command interpreter *****/
 
