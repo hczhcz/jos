@@ -270,12 +270,17 @@ page_init(void)
 	// NB: DO NOT actually touch the physical memory corresponding to
 	// free pages!
 	size_t i;
-	for (i = 0; i < npages; i++) {
+	page_free_list = NULL;
+	size_t free_pos = PGNUM(PADDR(boot_alloc(0)));
+	for (i = 1; i < npages; i++) {
+		if (i >= npages_basemem && i < free_pos) {
+			continue;
+		}
 		pages[i].pp_ref = 0;
 		pages[i].pp_link = page_free_list;
 		page_free_list = &pages[i];
 	}
-	chunk_list = NULL;
+	// chunk_list = NULL;
 }
 
 //
@@ -290,17 +295,27 @@ page_init(void)
 struct Page *
 page_alloc(int alloc_flags)
 {
-	// Fill this function in
-	return 0;
+	struct Page *pp = page_free_list;
+
+	if (pp) {
+		page_free_list = pp->pp_link;
+		pp->pp_link = NULL;
+
+		if (alloc_flags & ALLOC_ZERO) {
+			memset(page2kva(pp), 0, PGSIZE);
+		}
+	}
+
+	return pp;
 }
 
 //
-// Allocates n continuous physical page. If (alloc_flags & ALLOC_ZERO), fills the n pages 
+// Allocates n continuous physical page. If (alloc_flags & ALLOC_ZERO), fills the n pages
 // returned physical page with '\0' bytes.  Does NOT increment the reference
 // count of the page - the caller must do these if necessary (either explicitly
-// or via page_insert). 
+// or via page_insert).
 //
-// In order to figure out the n pages when return it. 
+// In order to figure out the n pages when return it.
 // These n pages should be organized as a list.
 //
 // Returns NULL if out of free memory.
@@ -319,7 +334,7 @@ page_alloc_npages(int alloc_flags, int n)
 // Return n continuous pages to chunk list. Do the following things:
 //	1. Check whether the n pages int the list are continue, Return -1 on Error
 //	2. Add the pages to the chunk list
-//	
+//
 //	Return 0 if everything ok
 int
 page_free_npages(struct Page *pp, int n)
@@ -335,7 +350,10 @@ page_free_npages(struct Page *pp, int n)
 void
 page_free(struct Page *pp)
 {
-	// Fill this function in
+	if (pp->pp_ref == 0) {
+		pp->pp_link = page_free_list;
+		page_free_list = pp;
+	}
 }
 
 //
@@ -386,8 +404,29 @@ page_decref(struct Page* pp)
 pte_t *
 pgdir_walk(pde_t *pgdir, const void *va, int create)
 {
-	// Fill this function in
-	return NULL;
+	pde_t *pde = pgdir + PDX(va);
+
+	if (*pde & PTE_P) {
+		// exist
+
+		return (pte_t *) KADDR(PTE_ADDR(*pde)) + PTX(va);
+	} else if (create) {
+		// new
+
+		struct Page *pp = page_alloc(ALLOC_ZERO);
+		if (pp) {
+			pp->pp_ref = 1;
+			*pde = page2pa(pp) | PTE_P | PTE_W | PTE_U;
+
+			return (pte_t *) KADDR(PTE_ADDR(*pde)) + PTX(va);
+		} else {
+			return NULL;
+		}
+	} else {
+		// not found
+
+		return NULL;
+	}
 }
 
 //
@@ -403,7 +442,16 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 static void
 boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm)
 {
-	// Fill this function in
+	size_t count = ROUNDUP(size, PGSIZE) / PGSIZE;
+	pte_t *pte;
+
+	for (; count >= 0; --count) {
+		pte = pgdir_walk(pgdir, (void *) va, 1);
+		*pte = pa | perm | PTE_P;
+
+		va += PGSIZE;
+		pa += PGSIZE;
+	}
 }
 
 //
@@ -433,8 +481,25 @@ boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm
 int
 page_insert(pde_t *pgdir, struct Page *pp, void *va, int perm)
 {
-	// Fill this function in
-	return 0;
+	pte_t *pte = pgdir_walk(pgdir, va, 1);
+
+	if (pte) {
+		if (*pte & PTE_P) {
+			if (PTE_ADDR(*pte) == page2pa(pp)) {
+				tlb_invalidate(pgdir, va);
+				--pp->pp_ref;
+			} else {
+				page_remove(pgdir, va);
+			}
+		}
+
+		*pte = page2pa(pp) | perm | PTE_P;
+		++pp->pp_ref;
+
+		return 0;
+	} else {
+		return -E_NO_MEM;
+	}
 }
 
 //
@@ -451,8 +516,17 @@ page_insert(pde_t *pgdir, struct Page *pp, void *va, int perm)
 struct Page *
 page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 {
-	// Fill this function in
-	return NULL;
+	pte_t *dummy;
+	if (!pte_store) {
+		pte_store = &dummy;
+	}
+
+	*pte_store = pgdir_walk(pgdir, va, 0);
+	if (*pte_store && (**pte_store & PTE_P)) {
+		return pa2page(PTE_ADDR(**pte_store));
+	} else {
+		return NULL;
+	}
 }
 
 //
@@ -473,7 +547,13 @@ page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 void
 page_remove(pde_t *pgdir, void *va)
 {
-	// Fill this function in
+	pte_t *pte;
+	struct Page *pp = page_lookup(pgdir, va, &pte);
+	if (pp) {
+		*pte = 0;
+		page_decref(pp);
+		tlb_invalidate(pgdir, va);
+	}
 }
 
 //
@@ -848,11 +928,11 @@ check_page(void)
 static int
 check_continuous(struct Page *pp, int num_page)
 {
-	struct Page *tmp; 
+	struct Page *tmp;
 	int i;
 	for( tmp = pp, i = 0; i < num_page - 1; tmp = tmp->pp_link, i++ )
 	{
-		if(tmp == NULL) 
+		if(tmp == NULL)
 		{
 			return 0;
 		}
@@ -871,7 +951,7 @@ check_n_pages(void)
 	char* addr;
 	int i;
 	pp = pp0 = 0;
-	
+
 	// Allocate two single pages
 	pp =  page_alloc(0);
 	pp0 = page_alloc(0);
@@ -879,7 +959,7 @@ check_n_pages(void)
 	assert(pp0 != 0);
 	assert(pp != pp0);
 
-	
+
 	// Free pp and assign four continuous pages
 	page_free(pp);
 	pp = page_alloc_npages(0, 4);
@@ -900,7 +980,7 @@ check_n_pages(void)
 	page_free(pp0);
 	pp0 = page_alloc_npages(ALLOC_ZERO, 4);
 	addr = (char*)page2kva(pp0);
-	
+
 	// Check Zero
 	for( i = 0; i < 4 * PGSIZE; i++ ){
 		assert(addr[i] == 0);
