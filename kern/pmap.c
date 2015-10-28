@@ -309,6 +309,10 @@ page_alloc(int alloc_flags)
 	return pp;
 }
 
+//
+// Find continuous pages.
+//
+// See also: page_alloc_npages
 struct Page **npages_find(int n, struct Page **begin, struct Page **end) {
 	size_t to_find = n;
 
@@ -402,8 +406,16 @@ page_free_npages(struct Page *pp, int n)
 	// find tail
 	struct Page **begin = &chunk_list;
 
-	while (*begin) {
+	while (*begin && *begin < pp) {
 		begin = &((*begin)->pp_link);
+	}
+	// TODO: necessary?
+	if (*begin) {
+		struct Page **begin2 = &pp;
+		while (*begin2) {
+			begin2 = &((*begin2)->pp_link);
+		}
+		*begin2 = *begin;
 	}
 	*begin = pp;
 
@@ -431,8 +443,63 @@ page_free(struct Page *pp)
 struct Page *
 page_realloc_npages(struct Page *pp, int old_n, int new_n)
 {
-	// Fill this function
-	return NULL;
+	if (old_n > new_n) {
+		// old_n > new_n, free tail pages
+
+		page_free_npages(pp + new_n, old_n - new_n);
+
+		if (new_n) {
+			pp[new_n - 1].pp_link = NULL;
+			return pp;
+		} else {
+			return NULL;
+		}
+	} else if (old_n < new_n) {
+		// old_n < new_n, append pages
+
+		// find in chunk
+		struct Page **begin = &chunk_list;
+		while (*begin && *begin < pp + old_n) {
+			begin = &((*begin)->pp_link);
+		}
+
+		size_t i;
+		struct Page **end = begin;
+		for (i = old_n; i < new_n; ++i) {
+			if (*end == pp + i) {
+				end = &((*end)->pp_link);
+			} else {
+				break;
+			}
+		}
+
+		if (i == new_n) {
+			// append
+
+			pp[old_n - 1].pp_link = *begin;
+			*begin = *end;
+			*end = NULL;
+
+			memset(page2kva(pp + old_n), 0, (new_n - old_n) * PGSIZE);
+
+			return pp;
+		} else {
+			// alloc new
+
+			struct Page *new_pp = page_alloc_npages(0, new_n);
+
+			memmove(page2kva(new_pp), page2kva(pp), old_n * PGSIZE);
+			memset(page2kva(new_pp + old_n), 0, (new_n - old_n) * PGSIZE);
+
+			page_free_npages(pp, old_n);
+
+			return new_pp;
+		}
+	} else {
+		// old_n == new_n, do nothing
+
+		return pp;
+	}
 }
 
 //
