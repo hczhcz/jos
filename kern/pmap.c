@@ -309,6 +309,27 @@ page_alloc(int alloc_flags)
 	return pp;
 }
 
+struct Page **npages_find(int n, struct Page **begin, struct Page **end) {
+	size_t to_find = n;
+
+	while (to_find) {
+		if (!*end) {
+			return NULL;
+		}
+
+		if (page2pa(*end) - page2pa((*end)->pp_link) == PGSIZE) {
+			--to_find;
+		} else {
+			to_find = n;
+			begin = &((*end)->pp_link);
+		}
+
+		*end = (*end)->pp_link;
+	}
+
+	return begin;
+};
+
 //
 // Allocates n continuous physical page. If (alloc_flags & ALLOC_ZERO), fills the n pages
 // returned physical page with '\0' bytes.  Does NOT increment the reference
@@ -327,8 +348,43 @@ page_alloc(int alloc_flags)
 struct Page *
 page_alloc_npages(int alloc_flags, int n)
 {
-	// Fill this function
-	return NULL;
+	if (!page_free_list) {
+		return NULL;
+	}
+	if (n <= 0) {
+		return NULL;
+	}
+
+	// find
+	struct Page *end = page_free_list;
+	struct Page **begin = npages_find(n, &page_free_list, &end);
+
+	if (!begin) {
+		return NULL;
+	}
+
+	// zero
+	struct Page *i;
+	for (i = *begin; i != end; i = i->pp_link) {
+		if (alloc_flags & ALLOC_ZERO) {
+			memset(page2kva(i), 0, PGSIZE);
+		}
+	}
+
+	// reverse
+	struct Page* target = *begin;
+	*begin = end;
+
+	struct Page* next = NULL;
+	struct Page* prev = NULL;
+	while (target != end) {
+		next = target->pp_link;
+		target->pp_link = prev;
+		prev = target;
+		target = next;
+	}
+
+	return prev;
 }
 
 // Return n continuous pages to chunk list. Do the following things:
@@ -339,8 +395,19 @@ page_alloc_npages(int alloc_flags, int n)
 int
 page_free_npages(struct Page *pp, int n)
 {
-	// Fill this function
-	return -1;
+	if (!check_continuous(pp, n)) {
+		return -1;
+	}
+
+	// find tail
+	struct Page **begin = &chunk_list;
+
+	while (*begin) {
+		begin = &((*begin)->pp_link);
+	}
+	*begin = pp;
+
+	return 0;
 }
 
 //
