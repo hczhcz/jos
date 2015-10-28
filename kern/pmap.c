@@ -209,7 +209,7 @@ mem_init(void)
 	boot_map_region(
 		kern_pgdir, KERNBASE,
 		-KERNBASE,
-		PADDR(pages), PTE_W | PTE_P
+		0, PTE_W | PTE_P
 	);
 
 	// Check that the initial page directory has been set up correctly.
@@ -512,7 +512,7 @@ boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm
 	size_t count = ROUNDUP(size, PGSIZE) / PGSIZE;
 	pte_t *pte;
 
-	for (; count >= 0; --count) {
+	for (; count > 0; --count) {
 		pte = pgdir_walk(pgdir, (void *) va, 1);
 		*pte = pa | perm | PTE_P;
 
